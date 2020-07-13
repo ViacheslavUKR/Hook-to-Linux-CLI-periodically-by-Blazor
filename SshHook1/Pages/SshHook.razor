@@ -1,0 +1,114 @@
+﻿@page "/SshHook"
+@using Model;
+@using Renci.SshNet;
+@using Renci.SshNet.Common;
+@using Microsoft.Extensions.Logging;
+
+<div class="row">
+    <EditForm Model="@sshHookModel" OnValidSubmit="@GoSsh" class="col-md-6">
+
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="form-group">
+            <label>IP</label><br />
+            <InputText id="IP" placeholder="IP" @bind-value="@sshHookModel.Ip" ValueExpression="@( () => sshHookModel.Ip )"></InputText>
+        </div>
+        <div class="form-group">
+            <label>Login</label><br />
+            <InputText id="Login" placeholder="Login" @bind-Value="@sshHookModel.Login"></InputText>
+        </div>
+        <div class="form-group">
+            <label>Pass</label><br />
+            <InputText type="password" id="Pass" placeholder="Pass" @bind-Value="@sshHookModel.Pass"></InputText>
+        </div>
+        <div class="form-group">
+            <label>Command</label><br />
+            <InputText id="Command" placeholder="Command" @bind-Value="@sshHookModel.Command"></InputText>
+        </div>
+        <div class="form-group">
+            <label>Each XX Seconds</label><br />
+            <InputText id="XX" placeholder="XX" @bind-Value="@sshHookModel.Seconds"></InputText>
+        </div>
+        <div style="padding:30px;" class="row">
+            <button id="submit" class="btn btn-primary" type="submit">Do it</button>
+        </div>
+    </EditForm>
+
+</div>
+<div class="row">
+    @Result
+</div>
+@code {
+
+    protected SshHookModel sshHookModel = new SshHookModel();
+    protected MarkupString Result { get; set; }
+    protected int Sec { get; set; } = 0;
+
+    [Inject] Microsoft.Extensions.Logging.ILogger<SshHook> Logger { get; set; }
+    [Inject] Services.TimerTick Timer { get; set; }
+
+    protected void GoSsh()
+    {
+        int sec = 0;
+        Int32.TryParse(sshHookModel.Seconds, out sec);
+        if (sec != 0)
+        {
+            DoSsh();
+            Sec = sec;
+            StartTimer(Sec);
+        }
+        else
+            TimerElapsedHandler();
+    }
+
+    private void TimerElapsedHandler()
+    {
+        DoSsh();
+        if (Sec != 0)
+        {
+            StartTimer(Sec);
+        }
+    }
+
+    private void StartTimer(int sec)
+    {
+        Timer.SetTimer(sec * 1000);
+        Timer.OnElapsed += TimerElapsedHandler;
+        Logger.LogInformation($"Timer Started. {DateTime.Now}");
+    }
+
+    private void DoSsh()
+    {
+        using (var client = new SshClient(sshHookModel.Ip, sshHookModel.Login, sshHookModel.Pass))
+        {
+
+            //Accept Host key
+            client.HostKeyReceived += delegate (object sender, HostKeyEventArgs e)
+            {
+                e.CanTrust = true;
+            };
+
+            string output = null;
+            try
+            {
+                client.Connect();
+
+                output = client.RunCommand(sshHookModel.Command).Result;
+
+                client.Disconnect();
+            }
+            catch (Exception ex)
+            {
+                Result = (MarkupString)ex.ToString().Replace("\n", "<br>");
+                this.InvokeAsync(() => this.StateHasChanged());
+            }
+
+            Logger.LogInformation(output?.ToString());
+            Result = (MarkupString)output.Replace("\n", "<br>");
+            this.InvokeAsync(() => this.StateHasChanged());
+        }
+    }
+
+
+}
