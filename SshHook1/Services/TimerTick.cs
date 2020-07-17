@@ -24,5 +24,12 @@ namespace SshHook1.Services
             OnElapsed?.Invoke();
             _timer.Dispose();
         }
+
+        //When the page is loaded, the IDisposable always invoke even the page is not closed
+        public void StopTimer()
+        {
+            _timer?.Stop();
+            _timer?.Dispose();
+        }
     }
 }

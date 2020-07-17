@@ -3,6 +3,12 @@
 @using Renci.SshNet;
 @using Renci.SshNet.Common;
 @using Microsoft.Extensions.Logging;
+@using SshHook1.Services;
+@using Microsoft.AspNetCore.Components.Server.Circuits;
+@implements IDisposable
+
+
+
 
 <div class="row">
     <EditForm Model="@sshHookModel" OnValidSubmit="@GoSsh" class="col-md-6">
@@ -36,17 +42,32 @@
     </EditForm>
 
 </div>
-<div class="row">
+<label>@CurTime</label>
+<br />
+<div class="row" style="border-style:solid;border-width:1px;">
     @Result
+</div>
+<div class="row">
+    Total Blazor Circuits: @((circuitHandler as CircuitHandlerService).Circuits.Count)
+    <br />
+    <ul>
+        @foreach (var circuit in (circuitHandler as CircuitHandlerService).Circuits)
+        {
+            <li>@circuit.Key</li>
+        }
+    </ul>
 </div>
 @code {
 
     protected SshHookModel sshHookModel = new SshHookModel();
     protected MarkupString Result { get; set; }
     protected int Sec { get; set; } = 0;
+    protected DateTime CurTime { get; set; }
 
     [Inject] Microsoft.Extensions.Logging.ILogger<SshHook> Logger { get; set; }
     [Inject] Services.TimerTick Timer { get; set; }
+    [Inject] CircuitHandler circuitHandler { get; set; }
+
 
     protected void GoSsh()
     {
@@ -80,6 +101,8 @@
 
     private void DoSsh()
     {
+        CurTime = DateTime.Now;
+
         using (var client = new SshClient(sshHookModel.Ip, sshHookModel.Login, sshHookModel.Pass))
         {
 
@@ -105,10 +128,40 @@
             }
 
             Logger.LogInformation(output?.ToString());
-            Result = (MarkupString)output.Replace("\n", "<br>");
+            if (output != null)
+            {
+                Result = (MarkupString)output.Replace("\n", "<br>");
+            }
+            else Result = (MarkupString)"";
             this.InvokeAsync(() => this.StateHasChanged());
         }
     }
 
+    #region emulate OnLeave event to stop timer
 
+    protected override void OnInitialized()
+    {
+        // Subscribe to the event handler
+        (circuitHandler as CircuitHandlerService).CircuitsChanged += HandleCircuitsChanged;
+
+    }
+
+    public void Dispose()
+    {
+        if (Timer != null) {
+            Logger.LogInformation($"Timer Dispose. {DateTime.Now}");
+            Timer.StopTimer();
+        }
+        // Unsubscribe the event handler when the component is disposed
+        (circuitHandler as CircuitHandlerService).CircuitsChanged -= HandleCircuitsChanged;
+
+    }
+
+    public void HandleCircuitsChanged(object sender, EventArgs args)
+    {
+        // notify the component that its state has changed
+        InvokeAsync(() => StateHasChanged());
+    }
+
+    #endregion
 }
